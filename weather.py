@@ -31,7 +31,9 @@ __version__ = "0.0.8"
 
 ###############################################################################
 #   Raspberry Pi Weather Display
-#	By: Jim Kemp	10/25/2014
+#	By: Jim Kemp	11/15/2014
+#
+#
 ###############################################################################
 import os
 import pygame
@@ -40,7 +42,7 @@ import datetime
 import random
 from pygame.locals import *
 import calendar
-import serial
+# import serial
 
 import pywapi
 import string
@@ -56,6 +58,24 @@ GPIO.setup( 17, GPIO.IN, pull_up_down=GPIO.PUD_DOWN )	# Shutdown
 
 mouseX, mouseY = 0, 0
 mode = 'w'		# Default to weather mode.
+
+disp_units = "metric"
+#zip_code = 'GMXX0007'
+zip_code = '22527'
+
+# Show degree F symbol using magic unicode char in a smaller font size.
+# The variable uniTmp holds a unicode character that is either DegreeC or DegreeF.
+# Yep, one unicode character is has both the letter and the degree symbol.
+if disp_units == 'metric':
+	uniTmp = unichr(0x2103)		# Unicode for DegreeC
+	windSpeed = ' m/s'
+	windScale = 0.277778		# To convert kmh to m/s.
+	baroUnits = ''
+else:
+	uniTmp = unichr(0x2109)		# Unicode for DegreeF
+	windSpeed = ' mph'
+	windScale = 1.0
+	baroUnits = ' "Hg'
 
 
 ###############################################################################
@@ -110,11 +130,11 @@ class SmDisplay:
 		#for fontname in pygame.font.get_fonts():
 		#        print fontname
 		self.temp = ''
-		self.feels_like = 0
-		self.wind_speed = 0
-		self.baro = 0.0
+		self.feels_like = ''
+		self.wind_speed = '0'
+		self.baro = '29.95'
 		self.wind_dir = 'S'
-		self.humid = 0
+		self.humid = '50.0'
 		self.wLastUpdate = ''
 		self.day = [ '', '', '', '' ]
 		self.icon = [ 0, 0, 0, 0 ]
@@ -133,21 +153,7 @@ class SmDisplay:
 		self.tmdateSmTh = 0.06
 		self.tmdateYPos = 10		# Time & Date Y Position
 		self.tmdateYPosSm = 18		# Time & Date Y Position Small
-
-		"""
-		# Small Display
-		self.xmax = 656 - 35
-		self.ymax = 416 - 5
-		self.scaleIcon = False		# No icon scaling needed.
-		self.iconScale = 1.0
-		self.subwinTh = 0.065		# Sub window text height
-		self.tmdateTh = 0.125		# Time & Date Text Height
-		self.tmdateSmTh = 0.075
-		self.tmdateYPos = 1		# Time & Date Y Position
-		self.tmdateYPosSm = 8		# Time & Date Y Position Small
-		"""
-
-
+		self.errCount = 0		# Count number of failed updates.
 
 
 	####################################################################
@@ -159,10 +165,17 @@ class SmDisplay:
 		# Use Weather.com for source data.
 		cc = 'current_conditions'
 		f = 'forecasts'
+		w = { cc:{ f:1 }}  # Init to something.
 
-		# This is where the majic happens. 
-		self.w = pywapi.get_weather_from_weather_com( '48085', units='imperial' )
-		w = self.w
+		# This is where the magic happens. 
+		try:
+			self.w = pywapi.get_weather_from_weather_com( zip_code, units=disp_units )
+			w = self.w
+		except Exception as e:
+			print "Error getting update from weather.com", e
+			self.errCount += 1
+			return
+
 		try:
 			if ( w[cc]['last_updated'] != self.wLastUpdate ):
 				self.wLastUpdate = w[cc]['last_updated']
@@ -195,24 +208,26 @@ class SmDisplay:
 				if ( w[f][0]['high'] == 'N/A' ):
 					self.temps[0][0] = '--'
 				else:	
-					self.temps[0][0] = w[f][0]['high'] + unichr(0x2109)
-				self.temps[0][1] = w[f][0]['low'] + unichr(0x2109)
-				self.temps[1][0] = w[f][1]['high'] + unichr(0x2109)
-				self.temps[1][1] = w[f][1]['low'] + unichr(0x2109)
-				self.temps[2][0] = w[f][2]['high'] + unichr(0x2109)
-				self.temps[2][1] = w[f][2]['low'] + unichr(0x2109)
-				self.temps[3][0] = w[f][3]['high'] + unichr(0x2109)
-				self.temps[3][1] = w[f][3]['low'] + unichr(0x2109)
-		except KeyError:
-			print "KeyError -> Weather Error"
-			self.temp = '??'
+					self.temps[0][0] = w[f][0]['high'] + uniTmp
+				self.temps[0][1] = w[f][0]['low'] + uniTmp
+				self.temps[1][0] = w[f][1]['high'] + uniTmp
+				self.temps[1][1] = w[f][1]['low'] + uniTmp
+				self.temps[2][0] = w[f][2]['high'] + uniTmp
+				self.temps[2][1] = w[f][2]['low'] + uniTmp
+				self.temps[3][0] = w[f][3]['high'] + uniTmp
+				self.temps[3][1] = w[f][3]['low'] + uniTmp
+			self.errCount = 0
+
+		except KeyError as e:
+			print "KeyError -> Weather Error", e
+			if self.errCount >= 15:
+				self.temp = '??'
 			self.wLastUpdate = ''
 			return False
-		#except ValueError:
-		#	print "ValueError -> Weather Error"
+		except ValueError:
+			print "ValueError -> Weather Error"
 		
 		return True
-
 
 
 	####################################################################
@@ -244,10 +259,10 @@ class SmDisplay:
 		sfont = pygame.font.SysFont( fn, int(ymax*sh), bold=1 )	# Small Font for Seconds
 
 		tm1 = time.strftime( "%a, %b %d   %I:%M", time.localtime() )	# 1st part
-		tm2 = time.strftime( "%S", time.localtime() )					# 2nd
-		tm3 = time.strftime( " %P", time.localtime() )					# 
+		tm2 = time.strftime( "%S", time.localtime() )			# 2nd
+		tm3 = time.strftime( " %P", time.localtime() )			# 
 
-		rtm1 = font.render( tm1, True, lc )
+		rtm1 = font.render(tm1, True, lc )
 		(tx1,ty1) = rtm1.get_size()
 		rtm2 = sfont.render( tm2, True, lc )
 		(tx2,ty2) = rtm2.get_size()
@@ -265,7 +280,7 @@ class SmDisplay:
 		(tx,ty) = txt.get_size()
 		# Show degree F symbol using magic unicode char in a smaller font size.
 		dfont = pygame.font.SysFont( fn, int(ymax*(0.5-0.15)*0.5), bold=1 )
-		dtxt = dfont.render( unichr(0x2109), True, lc )
+		dtxt = dfont.render( uniTmp, True, lc )
 		(tx2,ty2) = dtxt.get_size()
 		x = xmax*0.27 - (tx*1.02 + tx2) / 2
 		self.screen.blit( txt, (x,ymax*0.15) )
@@ -291,12 +306,17 @@ class SmDisplay:
 		(tx,ty) = txt.get_size()
 		# Show degree F symbol using magic unicode char.
 		dfont = pygame.font.SysFont( fn, int(ymax*dh), bold=1 )
-		dtxt = dfont.render( unichr(0x2109), True, lc )
+		dtxt = dfont.render( uniTmp, True, lc )
 		self.screen.blit( dtxt, (xmax*x2+tx*1.01,ymax*(st+so)) )
 
 		txt = font.render( 'Windspeed:', True, lc )
 		self.screen.blit( txt, (xmax*xp,ymax*(st+gp*1)) )
-		txt = font.render( self.wind_speed+' mph', True, lc )
+		if 'calm' in self.wind_speed:
+			windStr = " 0 %s" % windSpeed
+		else:
+			windSp = float(self.wind_speed) * windScale
+			windStr = "%.0f %s" % (windSp, windSpeed)
+		txt = font.render( windStr, True, lc )
 		self.screen.blit( txt, (xmax*x2,ymax*(st+gp*1)) )
 
 		txt = font.render( 'Direction:', True, lc )
@@ -306,7 +326,7 @@ class SmDisplay:
 
 		txt = font.render( 'Barometer:', True, lc )
 		self.screen.blit( txt, (xmax*xp,ymax*(st+gp*3)) )
-		txt = font.render( self.baro + '"Hg', True, lc )
+		txt = font.render( self.baro + baroUnits, True, lc )
 		self.screen.blit( txt, (xmax*x2,ymax*(st+gp*3)) )
 
 		txt = font.render( 'Humidity:', True, lc )
@@ -444,7 +464,7 @@ class SmDisplay:
 		th = self.tmdateTh
 		sh = self.tmdateSmTh
 		font = pygame.font.SysFont( fn, int(ymax*th), bold=1 )		# Regular Font
-		sfont = pygame.font.SysFont( fn, int(ymax*sh), bold=1 )	# Small Font for Seconds
+		sfont = pygame.font.SysFont( fn, int(ymax*sh), bold=1 )		# Small Font for Seconds
 
 		tm1 = time.strftime( "%a, %b %d   %I:%M", time.localtime() )	# 1st part
 		tm2 = time.strftime( "%S", time.localtime() )			# 2nd
@@ -468,13 +488,14 @@ class SmDisplay:
 		gp = 0.075	# Line Spacing Gap
 		th = 0.05		# Text Height
 
+		cfont = pygame.font.SysFont( sfn, int(ymax*sh), bold=1 )
 		#cal = calendar.TextCalendar()
 		yr = int( time.strftime( "%Y", time.localtime() ) )	# Get Year
 		mn = int( time.strftime( "%m", time.localtime() ) )	# Get Month
 		cal = calendar.month( yr, mn ).splitlines()
 		i = 0
 		for cal_line in cal:
-			txt = sfont.render( cal_line, True, lc )
+			txt = cfont.render( cal_line, True, lc )
 			self.screen.blit( txt, (xmax*xs,ymax*(ys+gp*i)) )
 			i = i + 1
 
@@ -547,12 +568,12 @@ class SmDisplay:
 		
 		# Outside Temperature
 		s = self.temp + unichr(176) + 'F '
-		s = s + self.baro + 'inHg '
+		s = s + self.baro + baroUnits
 		s = s + 'Wind ' + self.wind_speed
 		if self.gust != 'N/A': 
 			s = s + '/' + self.gust
 		if self.wind_speed != 'calm':
-			s = s + 'mph @' + self.wind_direction + unichr(176)
+			s = s + 'windSpeed @' + self.wind_direction + unichr(176)
 		self.sPrint( s, sfont, xmax*0.05, 9, lc )
 
 		s = "Visability %smi" % self.vis
@@ -652,12 +673,13 @@ def btnNext( channel ):
 #==============================================================
 #==============================================================
 
-try:
-	ser = serial.Serial( "/dev/ttyUSB0", 4800, timeout=2 )
-	serActive = True
-except:
-	serActive = False
-	print "Warning: can't open ttyUSB0 serial port."
+#try:
+#	ser = serial.Serial( "/dev/ttyUSB0", 4800, timeout=2 )
+#	serActive = True
+#except:
+#	serActive = False
+#	print "Warning: can't open ttyUSB0 serial port."
+serActive = False
 
 if serActive:
 	X10 = False		# Assume no X10 until proven wrong.
@@ -708,8 +730,8 @@ dispTO = 0		# Display timeout to automatically switch back to weather dispaly.
 
 # Loads data from Weather.com into class variables.
 if myDisp.UpdateWeather() == False:
-	print 'Error: no data from Weather.com.'
-	running = False
+	print 'Startup Error: no data from Weather.com.'
+	#running = False
 
 # Attach GPIO callback to our new button input on pin #4.
 GPIO.add_event_detect( 4, GPIO.RISING, callback=btnNext, bouncetime=400)
@@ -808,7 +830,10 @@ while running:
 		# Once the screen is updated, we have a full second to get the weather.
 		# Once per minute, update the weather from the net.
 		if ( s == 0 ):
-			myDisp.UpdateWeather()
+			try:
+				myDisp.UpdateWeather()
+			except:
+				print "Unhandled Error in UndateWeather."
 
 	if ( mode == 'h'):
 		# Pace the screen updates to once per second.
@@ -823,8 +848,12 @@ while running:
 			#	#print 'tDaylight ->', tDaylight
 			#	print "Time until daybreak (Hr:Min) -> %d:%d" % stot( tDaylight )
 
-			# Stat Screen Display.
-			myDisp.disp_help( inDaylight, dayHrs, dayMins, tDaylight, tDarkness )
+			try:
+				# Stat Screen Display.
+				myDisp.disp_help( inDaylight, dayHrs, dayMins, tDaylight, tDarkness )
+			except KeyError:
+				print "Disp_Help key error."
+
 		# Refresh the weather data once per minute.
 		if ( int(s) == 0 ): myDisp.UpdateWeather()
 
@@ -847,7 +876,6 @@ while running:
 	
 	# Loop timer.
 	pygame.time.wait( 100 )
-
 
 pygame.quit()
 
