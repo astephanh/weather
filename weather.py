@@ -44,6 +44,7 @@ from pygame.locals import *
 import calendar
 # import serial
 
+
 import pywapi
 import string
 
@@ -240,6 +241,8 @@ class SmDisplay:
 		lines = 5
 		lc = (255,255,255) 
 		fn = "freesans"
+
+                myButton = pygbutton.PygButton(rectObj, 'Caption text')
 
 		# Draw Screen Border
 		pygame.draw.line( self.screen, lc, (xmin,0),(xmax,0), lines )
