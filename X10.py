@@ -159,7 +159,7 @@ def X10_Bright( ser, h, u ):
 			print 'X10 Error send second Bright string.'
 			ret = False
 
-	ser.timeout = to	# Restore timeout to orginal value.
+	ser.timeout = to	# Restore timeout to original value.
 	return ret		# True = OK / False = Error.
 
 
